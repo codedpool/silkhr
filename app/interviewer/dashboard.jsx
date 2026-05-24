@@ -40,23 +40,26 @@ function ToggleCheckbox({ label, value, onChange }) {
   );
 }
 
-function NewTemplateForm({ onCreated }) {
-  const [open, setOpen]                       = useState(false);
-  const [name, setName]                       = useState('');
-  const [role, setRole]                       = useState('');
-  const [jd, setJd]                           = useState('');
-  const [resume, setResume]                   = useState('');
-  const [interviewType, setInterviewType]     = useState('Technical');
-  const [durationMinutes, setDurationMinutes] = useState(10);
-  const [pressureMode, setPressureMode]       = useState(false);
-  const [hinglishMode, setHinglishMode]       = useState(false);
-  const [deepFollowups, setDeepFollowups]     = useState(false);
+// Used for both "+ New template" (initial=null) and inline edit (initial=tpl).
+function TemplateForm({ initial = null, onSaved, onCancel, alwaysOpen = false }) {
+  const isEdit = !!initial;
+  const [open, setOpen]                       = useState(alwaysOpen || isEdit);
+  const [name, setName]                       = useState(initial?.name || '');
+  const [role, setRole]                       = useState(initial?.role || '');
+  const [jd, setJd]                           = useState(initial?.jobDescription || '');
+  const [resume, setResume]                   = useState(initial?.resumeHighlights || '');
+  const [interviewType, setInterviewType]     = useState(initial?.interviewType || 'Technical');
+  const [durationMinutes, setDurationMinutes] = useState(initial?.durationMinutes || 10);
+  const [pressureMode, setPressureMode]       = useState(!!initial?.pressureMode);
+  const [hinglishMode, setHinglishMode]       = useState(!!initial?.hinglishMode);
+  const [deepFollowups, setDeepFollowups]     = useState(!!initial?.deepFollowups);
   const [busy, setBusy]                       = useState(false);
   const [err, setErr]                         = useState('');
 
   const canSubmit = name.trim() && role.trim() && jd.trim() && !busy;
 
   const reset = () => {
+    if (isEdit) return; // edit forms shouldn't reset to blank, only collapse
     setName(''); setRole(''); setJd(''); setResume('');
     setInterviewType('Technical'); setDurationMinutes(10);
     setPressureMode(false); setHinglishMode(false); setDeepFollowups(false);
@@ -67,8 +70,10 @@ function NewTemplateForm({ onCreated }) {
     if (!canSubmit) return;
     setBusy(true); setErr('');
     try {
-      const res = await fetch('/api/templates', {
-        method: 'POST',
+      const url    = isEdit ? `/api/templates/${initial._id}` : '/api/templates';
+      const method = isEdit ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name, role, jobDescription: jd, resumeHighlights: resume,
@@ -78,9 +83,8 @@ function NewTemplateForm({ onCreated }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed');
-      reset();
-      setOpen(false);
-      onCreated?.(data.template);
+      if (!isEdit) { reset(); setOpen(false); }
+      onSaved?.(data.template);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -102,8 +106,17 @@ function NewTemplateForm({ onCreated }) {
   return (
     <div className="rounded-2xl border border-[#1C1917] bg-white/50 backdrop-blur-sm p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-medium">New template</h3>
-        <button onClick={() => { reset(); setOpen(false); }} className="text-xs text-[#78716C] hover:text-[#1C1917]">Cancel</button>
+        <h3 className="text-base font-medium">{isEdit ? 'Edit template' : 'New template'}</h3>
+        <button
+          onClick={() => {
+            reset();
+            if (isEdit) onCancel?.();
+            else setOpen(false);
+          }}
+          className="text-xs text-[#78716C] hover:text-[#1C1917]"
+        >
+          Cancel
+        </button>
       </div>
 
       <input
@@ -331,27 +344,10 @@ export default function InterviewerDashboard({ user }) {
             {templates.map((tpl) => {
               const tplAsns = assignments.filter((a) => a.templateId === tpl._id);
               return (
-                <div key={tpl._id} className="rounded-2xl border border-[#E8E0D0] bg-white/40 p-5">
-                  <div className="flex items-start justify-between gap-4 mb-1">
-                    <div className="min-w-0">
-                      <h3 className="text-base font-medium truncate">{tpl.name}</h3>
-                      <p className="text-xs text-[#78716C] mt-0.5">
-                        {tpl.role} · {tpl.interviewType} · {tpl.durationMinutes} min
-                        {tpl.pressureMode && ' · Pressure'}
-                        {tpl.hinglishMode && ' · Hinglish'}
-                        {tpl.deepFollowups && ' · Deep follow-ups'}
-                      </p>
-                    </div>
-                    <span className="text-[10px] tracking-widest uppercase text-[#A89F92] flex-shrink-0">
-                      {tplAsns.length} scheduled
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#5C5650] mt-2 line-clamp-2">{tpl.jobDescription}</p>
-                  <ScheduleForm templateId={tpl._id} onScheduled={refresh} />
-                </div>
+                <TemplateCard key={tpl._id} tpl={tpl} scheduledCount={tplAsns.length} onRefresh={refresh} />
               );
             })}
-            <NewTemplateForm onCreated={refresh} />
+            <TemplateForm onSaved={refresh} />
           </section>
         )}
 
@@ -390,6 +386,7 @@ export default function InterviewerDashboard({ user }) {
                         <ReleaseToggle assignment={asn} onChange={refresh} />
                       </>
                     )}
+                    <DeleteAssignmentButton assignment={asn} onDeleted={refresh} />
                   </div>
                 </div>
               );
@@ -442,6 +439,107 @@ function StatusPill({ status }) {
   };
   const m = map[status] || map.pending;
   return <span className={`text-[9px] tracking-widest uppercase font-semibold px-2 py-0.5 rounded-full ${m.bg} ${m.text}`}>{m.label}</span>;
+}
+
+// One template card. Toggles into inline edit mode; supports delete with confirm.
+function TemplateCard({ tpl, scheduledCount, onRefresh }) {
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  if (editing) {
+    return (
+      <TemplateForm
+        initial={tpl}
+        onSaved={() => { setEditing(false); onRefresh?.(); }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  const handleDelete = async () => {
+    const warn = scheduledCount > 0
+      ? `Delete "${tpl.name}"? ${scheduledCount} assignment${scheduledCount === 1 ? ' is' : 's are'} linked to this template — those rows will become orphaned (sessions and feedback survive).`
+      : `Delete "${tpl.name}"?`;
+    if (!window.confirm(warn)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/templates/${tpl._id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      onRefresh?.();
+    } catch (err) {
+      alert(err.message);
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-[#E8E0D0] bg-white/40 p-5 group">
+      <div className="flex items-start justify-between gap-4 mb-1">
+        <div className="min-w-0">
+          <h3 className="text-base font-medium truncate">{tpl.name}</h3>
+          <p className="text-xs text-[#78716C] mt-0.5">
+            {tpl.role} · {tpl.interviewType} · {tpl.durationMinutes} min
+            {tpl.pressureMode && ' · Pressure'}
+            {tpl.hinglishMode && ' · Hinglish'}
+            {tpl.deepFollowups && ' · Deep follow-ups'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-[10px] tracking-widest uppercase text-[#A89F92]">
+            {scheduledCount} scheduled
+          </span>
+          <button
+            onClick={() => setEditing(true)}
+            title="Edit template"
+            className="text-[10px] tracking-widest uppercase font-semibold px-2 py-1 rounded-full border border-[#DDD6C8] text-[#78716C] hover:border-[#1C1917] hover:text-[#1C1917] transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            title="Delete template"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#A89F92] hover:bg-rose-50 hover:text-rose-600 transition-colors disabled:opacity-40"
+            aria-label="Delete template"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <p className="text-xs text-[#5C5650] mt-2 line-clamp-2">{tpl.jobDescription}</p>
+      <ScheduleForm templateId={tpl._id} onScheduled={onRefresh} />
+    </div>
+  );
+}
+
+function DeleteAssignmentButton({ assignment, onDeleted }) {
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    const msg = assignment.status === 'completed'
+      ? `Delete this assignment for ${assignment.candidateEmail}? The session, transcript, and feedback will be preserved — only the scheduling link is removed.`
+      : `Delete this assignment for ${assignment.candidateEmail}?`;
+    if (!window.confirm(msg)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/assignments/${assignment._id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      onDeleted?.();
+    } catch (err) {
+      alert(err.message);
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      onClick={handleDelete}
+      disabled={busy}
+      title="Delete assignment"
+      className="w-7 h-7 rounded-full flex items-center justify-center text-[#A89F92] hover:bg-rose-50 hover:text-rose-600 transition-colors disabled:opacity-40"
+      aria-label="Delete assignment"
+    >
+      ×
+    </button>
+  );
 }
 
 function ReleaseToggle({ assignment, onChange }) {

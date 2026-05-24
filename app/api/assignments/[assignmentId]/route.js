@@ -1,5 +1,5 @@
 import { requireRole } from '@/lib/auth';
-import { getAssignment, updateAssignment } from '@/lib/assignments';
+import { deleteAssignment, getAssignment, updateAssignment } from '@/lib/assignments';
 import { getSession, saveSession } from '@/lib/sessions';
 
 // PATCH { released: boolean }  — interviewer toggles result visibility for the candidate
@@ -33,4 +33,15 @@ export async function PATCH(request, { params }) {
   }
 
   return Response.json({ assignment: next });
+}
+
+export async function DELETE(_request, { params }) {
+  const user = await requireRole('interviewer');
+  const { assignmentId } = await params;
+  const asn = await getAssignment(assignmentId);
+  if (!asn || asn.ownerId !== user._id) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+  await deleteAssignment(assignmentId, user._id);
+  return Response.json({ ok: true });
 }
