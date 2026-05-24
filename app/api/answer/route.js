@@ -2,6 +2,7 @@ import { getSession, saveSession } from '@/lib/sessions';
 import { transcribe } from '@/lib/deepgram';
 import { evaluateAndContinue } from '@/lib/gemini';
 import { mintSilkWS } from '@/lib/silk';
+import { updateAssignment } from '@/lib/assignments';
 
 export async function POST(request) {
   const url = new URL(request.url);
@@ -80,6 +81,18 @@ export async function POST(request) {
   }
   if (evalResult.isComplete) {
     session.status = 'completed';
+  }
+
+  // If the session is completed and belongs to an assignment, mark the assignment too.
+  if (evalResult.isComplete && session.assignmentId) {
+    try {
+      await updateAssignment(session.assignmentId, {
+        status: 'completed',
+        completedAt: Date.now(),
+      });
+    } catch (err) {
+      console.warn('[answer] failed to mark assignment completed:', err);
+    }
   }
 
   // Persist all the mutations we made above before responding.
