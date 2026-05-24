@@ -2,7 +2,7 @@
 
 > An AI voice interviewer that sounds like a person, not a bot. Native Hinglish, adaptive follow-ups, scheduled screens for recruiters, and unlimited mock practice for candidates.
 
-Built for the **Rumik × AWS Voice Hackathon** (May 2026).
+Built at the **Rumik × AWS Voice AI Hackathon** (May 2026).
 
 ---
 
@@ -194,4 +194,4 @@ lib/
 
 ## Credits
 
-Built by **Rumik** at the **AWS Voice Hackathon**, May 2026. Voice models: Deepgram, Google Gemini, Silk muga.
+Built at the **Rumik × AWS Voice AI Hackathon**, May 2026. Voice models: Deepgram, Google Gemini, Silk muga.
